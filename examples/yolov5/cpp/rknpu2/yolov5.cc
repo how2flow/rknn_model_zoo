@@ -16,11 +16,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <sys/time.h>
 
 #include "yolov5.h"
 #include "common.h"
 #include "file_utils.h"
 #include "image_utils.h"
+
+#define SUBCORES RKNN_NPU_CORE_0 // multi-core: RKNN_NPU_CORE_0_1_2
+
+static double __get_us(struct timeval t)
+{
+    return (t.tv_sec * 1000000 + t.tv_usec);
+}
 
 static void dump_tensor_attr(rknn_tensor_attr *attr)
 {
@@ -155,7 +163,7 @@ int release_yolov5_model(rknn_app_context_t *app_ctx)
     return 0;
 }
 
-int inference_yolov5_model(rknn_app_context_t *app_ctx, image_buffer_t *img, object_detect_result_list *od_results)
+int inference_yolov5_model(rknn_app_context_t *app_ctx, image_buffer_t *img, object_detect_result_list *od_results, int bench)
 {
     int ret;
     image_buffer_t dst_img;
@@ -211,6 +219,11 @@ int inference_yolov5_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
         return -1;
     }
 
+#if defined(SUBCORES)
+    rknn_core_mask core_mask = SUBCORES;
+    rknn_set_core_mask(app_ctx->rknn_ctx, core_mask);
+#endif
+
     // Run
     printf("rknn_run\n");
     ret = rknn_run(app_ctx->rknn_ctx, nullptr);
@@ -239,6 +252,38 @@ int inference_yolov5_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
 
     // Remeber to release rknn output
     rknn_outputs_release(app_ctx->rknn_ctx, app_ctx->io_num.n_output, outputs);
+
+    if (bench)
+    {
+        int test_count = 10;
+        struct timeval start_time, stop_time;
+        gettimeofday(&start_time,NULL);
+        for (int i = 0; i < test_count; ++i)
+        {
+            rknn_inputs_set(app_ctx->rknn_ctx, app_ctx->io_num.n_input, inputs);
+            ret = rknn_run(app_ctx->rknn_ctx, nullptr);
+            if (ret < 0)
+            {
+                printf("rknn_run fail! ret=%d\n", ret);
+                return -1;
+            }
+            ret = rknn_outputs_get(app_ctx->rknn_ctx, app_ctx->io_num.n_output, outputs, NULL);
+            if (ret < 0)
+            {
+                printf("rknn_outputs_get fail! ret=%d\n", ret);
+                goto out;
+            }
+
+#if defined(PERF_WITH_POST)
+            post_process(app_ctx, outputs, &letter_box, box_conf_threshold, nms_threshold, od_results);
+#endif
+
+            rknn_outputs_release(app_ctx->rknn_ctx, app_ctx->io_num.n_output, outputs);
+        }
+        gettimeofday(&stop_time,NULL);
+        printf("loop count = %d average run %f ms\n", test_count,
+            (__get_us(stop_time) - __get_us(start_time)) / 1000.0 / test_count);
+    }
 
 out:
     if (dst_img.virt_addr != NULL)

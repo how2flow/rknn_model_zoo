@@ -29,6 +29,8 @@
     #include "dma_alloc.cpp"
 #endif
 
+static int bench = 1; // 0: not do anything  1: run bench
+
 /*-------------------------------------------
                   Main Function
 -------------------------------------------*/
@@ -78,7 +80,7 @@ int main(int argc, char **argv)
 
     object_detect_result_list od_results;
 
-    ret = inference_yolov5_model(&rknn_app_ctx, &src_image, &od_results);
+    ret = inference_yolov5_model(&rknn_app_ctx, &src_image, &od_results, bench);
     if (ret != 0)
     {
         printf("init_yolov5_model fail! ret=%d\n", ret);
@@ -90,23 +92,24 @@ int main(int argc, char **argv)
     for (int i = 0; i < od_results.count; i++)
     {
         object_detect_result *det_result = &(od_results.results[i]);
-        printf("%s @ (%d %d %d %d) %.3f\n", coco_cls_to_name(det_result->cls_id),
-               det_result->box.left, det_result->box.top,
-               det_result->box.right, det_result->box.bottom,
-               det_result->prop);
+        if (!bench)
+        {
+            printf("%s @ (%d %d %d %d) %.3f\n", coco_cls_to_name(det_result->cls_id),
+                   det_result->box.left, det_result->box.top,
+                   det_result->box.right, det_result->box.bottom,
+                   det_result->prop);
+        }
         int x1 = det_result->box.left;
         int y1 = det_result->box.top;
         int x2 = det_result->box.right;
         int y2 = det_result->box.bottom;
 
         draw_rectangle(&src_image, x1, y1, x2 - x1, y2 - y1, COLOR_BLUE, 3);
-
         sprintf(text, "%s %.1f%%", coco_cls_to_name(det_result->cls_id), det_result->prop * 100);
         draw_text(&src_image, text, x1, y1 - 20, COLOR_RED, 10);
     }
 
     write_image("out.png", &src_image);
-
 out:
     deinit_post_process();
 
