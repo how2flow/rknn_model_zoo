@@ -23,7 +23,7 @@
 #include "file_utils.h"
 #include "image_utils.h"
 
-#define SUBCORES RKNN_NPU_CORE_0 // multi-core: RKNN_NPU_CORE_0_1_2
+#define SUBCORES RKNN_NPU_CORE_0_1_2 // multi-core: RKNN_NPU_CORE_0_1_2
 
 static double __get_us(struct timeval t)
 {
@@ -258,7 +258,7 @@ int inference_yolov5_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
         int test_count = 10;
         struct timeval start_time, stop_time;
         gettimeofday(&start_time,NULL);
-        for (int i = 0; i < test_count; ++i)
+        while (1)
         {
             rknn_inputs_set(app_ctx->rknn_ctx, app_ctx->io_num.n_input, inputs);
             ret = rknn_run(app_ctx->rknn_ctx, nullptr);
